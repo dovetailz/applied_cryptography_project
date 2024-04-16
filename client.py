@@ -166,6 +166,22 @@ def send_communication_request_to_target(client : Communicator):
     decrypted_response = decrypt_data(encrypted_response, client.private_key)
 
     loaded_obj = pickle.loads(decrypted_response)
+
+    if time_string != loaded_obj.time:
+        print(f"{Style.BRIGHT}{Fore.RED} Time received from {client.get_target_name()} does not equal time that we generated")
+        exit(-1)
+    # time validation
+    new_current_time = datetime.now()
+    new_time_string = new_current_time.strftime("%H:%M:%S")
+    new_current_datetime = datetime.strptime(new_time_string, "%H:%M:%S")
+    received_datetime = datetime.strptime(time_string, "%H:%M:%S")
+    
+    time_difference = new_current_datetime - received_datetime
+    time_difference = time_difference.total_seconds()
+    if time_difference != 0:
+        print(f"{Style.BRIGHT}{Fore.RED} Time received from {client.get_target_name()} is {time_difference}s old. May be a replay.")
+        exit(-1)
+
     message = InitialCommunicationRequestToTargetResponse(loaded_obj.sender, loaded_obj.message, loaded_obj.time, loaded_obj.nonce, loaded_obj.nonce2)
     print(f"{Style.BRIGHT}{Fore.CYAN}Received response to:{message.message} from {client.get_target_name()}{Style.RESET_ALL}")
     print(f"{Style.BRIGHT}{Fore.CYAN}Nonce is {message.nonce}{Style.RESET_ALL}")
@@ -225,18 +241,17 @@ class TCPServer:
                 response = None
                 # 3. Receive Request
                 if message.message == MessageType.INITIAL_COMMUNICATION_REQUEST_TO_TARGET:
-                    nonce2 = loaded_obj.nonce + 1
-                    message = InitialCommunicationRequestToTargetResponse(loaded_obj.sender, loaded_obj.message, None, loaded_obj.nonce, nonce2)
+                    nonce2 = loaded_obj.nonce + random.randint(0,100)
+                    message = InitialCommunicationRequestToTargetResponse(loaded_obj.sender, loaded_obj.message, loaded_obj.time, loaded_obj.nonce, nonce2)
                     # 6. Send response
                     response = handle_initial_communication_request(message, client)
                     
-            
                 elif message.message == MessageType.ACK_TARGET_NONCE2:
                     message = AckNonce2(loaded_obj.sender, loaded_obj.message, loaded_obj.time, loaded_obj.nonce2)
                     if nonce2 == message.nonce2:
                         print(f"{Style.BRIGHT}{Fore.GREEN}Successfully established communication channel with {client.get_target_name()}{Style.RESET_ALL}")
                     else:
-                        print(f"{Style.BRIGHT}{Fore.RED}Failed nonce validation. Expected nonce:{nonce2} Actual nonce:{message.nonce2}{Style.RESET_ALL}")
+                        print(f"{Style.BRIGHT}{Fore.RED}Failed nonce validation. Expected nonce:{nonce2} Actual nonce:{message.nonce2}{Style.RESET_ALL}. May be a replay of an old nonce.")
                     return
                 writer.write(response)
                 await writer.drain()
